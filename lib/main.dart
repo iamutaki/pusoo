@@ -16,13 +16,17 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 // import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:pusoo/features/track/domain/usecases/auto_refresh_active_source_usecase.dart';
 import 'package:pusoo/router.dart';
+import 'package:pusoo/shared/utils/usecase.dart';
 // import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 // import 'package:media_kit/media_kit.dart';
@@ -47,7 +51,17 @@ void main() {
   //   DeviceOrientation.portraitDown,
   // ]);
 
-  runApp(ProviderScope(child: Application()));
+  final container = ProviderContainer();
+
+  // Daily auto-refresh of the active playlist (throttled to once/24h, silent on
+  // failure — the UI keeps showing existing DB tracks while this runs).
+  unawaited(
+    container.read(autoRefreshActiveSourceUsecaseProvider).call(NoParams()),
+  );
+
+  runApp(
+    UncontrolledProviderScope(container: container, child: Application()),
+  );
 }
 
 class Application extends StatefulWidget {

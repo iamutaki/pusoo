@@ -407,6 +407,9 @@ class _AddNewPlaylistScreenState extends ConsumerState<AddNewPlaylistScreen> {
                                 epgLinkController.text.trim(),
                               ),
                               url: drift.Value(urlController.text.trim()),
+                              // mark as freshly synced so the daily auto-refresh
+                              // doesn't immediately re-fetch on the next launch
+                              lastUpdated: drift.Value(DateTime.now()),
                               isActive: drift.Value(count == 0),
                               isPublic: drift.Value(
                                 widget.source.isPublic ?? false,
