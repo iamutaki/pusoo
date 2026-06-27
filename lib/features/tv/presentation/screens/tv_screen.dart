@@ -26,7 +26,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:infinite_scroll_pagination/infinite_scroll_pagination.dart';
 import 'package:intl/intl.dart';
 import 'package:pusoo/shared/utils/theme_app.dart';
+import 'package:pusoo/shared/utils/helpers.dart';
 import 'package:pusoo/features/source/presentation/providers/active_source_notifier.dart';
+import 'package:pusoo/features/track/domain/usecases/auto_refresh_active_source_usecase.dart';
 import 'package:pusoo/features/track/domain/models/track_filter_query.dart';
 import 'package:pusoo/features/tv/presentation/providers/tv_track_count_notifier.dart';
 import 'package:pusoo/features/tv/presentation/providers/tv_track_group_titles_notifier.dart';
@@ -154,6 +156,7 @@ class _TvScreenState extends ConsumerState<TvScreen> {
     final isPotrait = orientation == Orientation.portrait;
 
     final searchController = useTextEditingController();
+    final isRefreshing = useState(false);
 
     final asyncGroupTitles = ref.watch(tvTrackGroupTitlesProvider);
 
@@ -255,6 +258,28 @@ class _TvScreenState extends ConsumerState<TvScreen> {
           ],
         ),
         suffixes: [
+          FHeaderAction(
+            icon: isRefreshing.value
+                ? FProgress.circularIcon()
+                : Icon(FIcons.refreshCw),
+            // manual re-sync of the active playlist (bypasses the 24h throttle)
+            onPress: isRefreshing.value
+                ? null
+                : () async {
+                    isRefreshing.value = true;
+                    final count = await ref
+                        .read(autoRefreshActiveSourceUsecaseProvider)
+                        .call(force: true);
+                    if (!context.mounted) return;
+                    isRefreshing.value = false;
+                    showFlutterToast(
+                      context: context,
+                      message: count == null
+                          ? "Gagal refresh / tidak ada source aktif"
+                          : "Playlist di-refresh ($count channel)",
+                    );
+                  },
+          ),
           !isPotrait
               ? FHeaderAction(
                   icon: Icon(FIcons.antenna),

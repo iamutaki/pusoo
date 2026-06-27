@@ -27,7 +27,6 @@ import 'package:media_kit/media_kit.dart';
 import 'package:pusoo/features/playlist/domain/usecases/inject_default_playlist_usecase.dart';
 import 'package:pusoo/features/track/domain/usecases/auto_refresh_active_source_usecase.dart';
 import 'package:pusoo/router.dart';
-import 'package:pusoo/shared/utils/usecase.dart';
 // import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 // import 'package:media_kit/media_kit.dart';
@@ -61,9 +60,7 @@ void main() {
 
   // Daily auto-refresh of the active playlist (throttled to once/24h, silent on
   // failure — the UI keeps showing existing DB tracks while this runs).
-  unawaited(
-    container.read(autoRefreshActiveSourceUsecaseProvider).call(NoParams()),
-  );
+  unawaited(container.read(autoRefreshActiveSourceUsecaseProvider).call());
 
   runApp(
     UncontrolledProviderScope(container: container, child: Application()),

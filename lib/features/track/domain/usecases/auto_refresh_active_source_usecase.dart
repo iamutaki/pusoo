@@ -16,55 +16,54 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import 'package:dartz/dartz.dart';
 import 'package:drift/drift.dart' as drift;
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:pusoo/features/track/domain/models/track.dart';
-import 'package:pusoo/features/track/domain/usecases/refresh_all_track_usecase.dart';
 import 'package:pusoo/features/track/presentation/providers/track_providers.dart';
 import 'package:pusoo/shared/data/datasources/local/drift/drift_database.dart';
-import 'package:pusoo/shared/errors/failure.dart';
 import 'package:pusoo/shared/utils/m3u.dart';
 import 'package:pusoo/shared/utils/usecase.dart';
 
-/// Re-fetches the active source's M3U from its remote URL, replaces its tracks
-/// in the local DB, then refreshes the home UI — throttled to at most once per
-/// day via the source's existing `lastUpdated` column.
+/// Re-syncs the active source's M3U from its remote URL, replaces its tracks in
+/// the local DB, then refreshes the home UI.
 ///
-/// Triggered fire-and-forget on app start (see main.dart). It is silent on
-/// failure: a network/parse error keeps the existing tracks and leaves
-/// `lastUpdated` untouched so the next launch retries.
-class AutoRefreshActiveSourceUsecase implements UseCase<void, NoParams> {
-  final RefreshAllTrackUsecase _refreshUi;
+/// Used two ways:
+/// - **Auto** (app start, no `force`): throttled to once/24h via the source's
+///   `lastUpdated` column. Silent on failure — existing tracks are kept and the
+///   next launch retries.
+/// - **Manual** (`force: true`): bypasses the throttle.
+///
+/// Returns the number of tracks synced, or null when nothing happened (no
+/// active source / no url / throttled / fetch failed).
+class AutoRefreshActiveSourceUsecase {
+  final Ref _ref;
 
-  AutoRefreshActiveSourceUsecase(this._refreshUi);
+  AutoRefreshActiveSourceUsecase(this._ref);
 
   /// Minimum gap between two auto-refreshes of the same source.
   static const minInterval = Duration(hours: 24);
 
-  @override
-  Future<Either<Failure, void>> call(NoParams? params) async {
+  Future<int?> call({bool force = false}) async {
     final source = await (driftDb.select(driftDb.sourceDrift)
           ..where((t) => t.isActive.equals(true)))
         .getSingleOrNull();
 
     final url = source?.url?.trim();
-    if (source == null || url == null || url.isEmpty) {
-      return Right(null);
-    }
+    if (source == null || url == null || url.isEmpty) return null;
 
     // ponytail: throttle via the source's existing lastUpdated column — no new
     // storage. A failed refresh leaves lastUpdated untouched so it retries later.
     final now = DateTime.now();
-    if (source.lastUpdated != null &&
+    if (!force &&
+        source.lastUpdated != null &&
         now.difference(source.lastUpdated!) < minInterval) {
-      return Right(null);
+      return null;
     }
 
     final sourceId = source.id;
     final tracks = await _fetchTracks(url);
-    if (tracks == null || tracks.isEmpty) return Right(null);
+    if (tracks == null || tracks.isEmpty) return null;
 
     await driftDb.transaction(() async {
       await (driftDb.delete(driftDb.trackDrift)
@@ -78,12 +77,14 @@ class AutoRefreshActiveSourceUsecase implements UseCase<void, NoParams> {
           .write(SourceDriftCompanion(lastUpdated: drift.Value(now)));
     });
 
-    // surface the fresh data in the home UI
-    await _refreshUi.call(NoParams());
+    // read fresh: refreshAllTrackUsecaseProvider is autoDispose, so capturing its
+    // instance would hold a Ref that later gets disposed → UnmountedRefException.
+    await _ref.read(refreshAllTrackUsecaseProvider).call(NoParams());
     debugPrint(
-      'auto-refresh: source $sourceId refreshed with ${tracks.length} tracks',
+      '${force ? 'manual' : 'auto'}-refresh: source $sourceId synced '
+      '${tracks.length} tracks',
     );
-    return Right(null);
+    return tracks.length;
   }
 
   /// Fetches + parses the remote M3U, returning null (silent) on any failure.
@@ -91,16 +92,14 @@ class AutoRefreshActiveSourceUsecase implements UseCase<void, NoParams> {
     try {
       return await fetchAndParseM3u(url);
     } catch (e) {
-      debugPrint('auto-refresh: fetch failed, keeping existing tracks: $e');
+      debugPrint('refresh: fetch failed, keeping existing tracks: $e');
       return null;
     }
   }
 }
 
-// ponytail: plain Provider (no build_runner) for a one-off bootstrap usecase.
+// ponytail: plain Provider (no build_runner) for a bootstrap usecase.
 final autoRefreshActiveSourceUsecaseProvider =
     Provider<AutoRefreshActiveSourceUsecase>((ref) {
-  return AutoRefreshActiveSourceUsecase(
-    ref.read(refreshAllTrackUsecaseProvider),
-  );
+  return AutoRefreshActiveSourceUsecase(ref);
 });
