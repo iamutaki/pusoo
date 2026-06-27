@@ -24,7 +24,7 @@ import 'package:pusoo/features/track/domain/models/track.dart';
 import 'package:pusoo/shared/data/datasources/local/drift/drift_database.dart';
 
 extension TrackDriftDataExt on TrackDriftData {
-  toEntity() {
+  Track toEntity() {
     // fromDrift(TrackDriftData trackDrift) {
     final json = toJson();
 

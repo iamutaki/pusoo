@@ -102,63 +102,29 @@ class TrackDriftDatasourceImpl implements TrackDatasource {
       whereClauses.add(driftDb.trackDrift.id.isBiggerThanValue(params.cursor!));
     }
 
-    // // 3. Bangun query select utama
-    final query = driftDb.select(driftDb.trackDrift).join([
-      drift.innerJoin(
-        driftDb.sourceDrift,
-        driftDb.sourceDrift.id.equalsExp(driftDb.trackDrift.sourceId),
-      ),
-    ]);
-
-    // 4. Gabungkan semua klausa WHERE jika list tidak kosong
-    // if (whereClauses.isNotEmpty) {
-    //   // tanpa JOIN
-    //   // final finalClause = whereClauses.reduce((a, b) => a & b);
-    //   // query.where((_) => finalClause);
-
-    // }
+    // select langsung pada trackDrift. JOIN sourceDrift dihapus: field `playlist`
+    // yang di-embed toEntity() tidak dipakai model Track, jadi JOIN + serialisasi
+    // source-row per baris hanya sia-sia.
+    final query = driftDb.select(driftDb.trackDrift);
 
     if (whereClauses.isNotEmpty) {
-      // Gunakan `reduce` untuk menggabungkan semua Expression dengan operator & (AND)
       final finalClause = whereClauses.reduce((a, b) => a & b);
-
-      // Langsung berikan Expression<bool> yang sudah jadi ke metode `where`
-      query.where(finalClause);
+      query.where((_) => finalClause);
     }
 
-    _log.i('--- DEBUG ---');
-    _log.i('Params: $params');
-    _log.i('Where Clauses count: ${whereClauses.length}');
-    _log.i('Where Clauses: $whereClauses');
-
-    // 5. (BARU) Terapkan Paginasi menggunakan Limit dan Offset (Cursor)
+    // pagination: keyset (cursor) + limit
     if (params?.limit != null) {
-      // Method `limit` di Drift menerima jumlah item dan `offset` opsional.
       query.limit(params!.limit!);
     }
 
-    // if (params?.offset != null) {
-    //   query.offset(params!.offset!);
-    // }
-
-    // Opsional: Tambahkan sorting agar hasilnya konsisten
+    // urutkan by id agar keyset pagination konsisten
     query.orderBy([
-      drift.OrderingTerm(
-        expression: driftDb.trackDrift.id,
-        mode: drift.OrderingMode.asc,
-      ),
+      (t) => drift.OrderingTerm(expression: t.id, mode: drift.OrderingMode.asc),
     ]);
 
-    // 5. Eksekusi query dan lakukan mapping hasil
-    final trackDriftDataRows = await query.get();
+    final rows = await query.get();
 
-    final List<Track> mapToTrack = trackDriftDataRows.map((
-      drift.TypedResult result,
-    ) {
-      return result.toEntity();
-    }).toList();
-
-    return mapToTrack;
+    return rows.map((row) => row.toEntity()).toList();
   }
 
   @override

@@ -23,6 +23,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:pusoo/shared/utils/helpers.dart';
 import 'package:pusoo/shared/utils/usecase.dart';
+import 'package:pusoo/features/source/presentation/providers/active_source_notifier.dart';
 import 'package:pusoo/features/track/presentation/providers/track_providers.dart';
 import 'package:pusoo/router.dart';
 import 'package:pusoo/shared/data/datasources/local/drift/drift_database.dart';
@@ -50,6 +51,11 @@ class _ManageSourceScreenState extends ConsumerState<ManageSourceScreen> {
     // Hapus semua isi tabel 'playlist'
     await driftDb.delete(driftDb.sourceDrift).go();
     await driftDb.delete(driftDb.trackDrift).go();
+
+    // invalidate cached active source + reload the home track lists, otherwise
+    // the deleted active playlist's channels linger until a manual refresh
+    await ref.read(activeSourceProvider.notifier).perform();
+    ref.read(refreshAllTrackUsecaseProvider).call(NoParams());
 
     loadPlaylist();
   }
@@ -267,6 +273,20 @@ class _ManageSourceScreenState extends ConsumerState<ManageSourceScreen> {
 
                                                     loadPlaylist();
 
+                                                    // invalidate cached active source + reload home lists so Home
+                                                    // switches to the new active playlist immediately
+                                                    await ref
+                                                        .read(
+                                                          activeSourceProvider
+                                                              .notifier,
+                                                        )
+                                                        .perform();
+                                                    ref
+                                                        .read(
+                                                          refreshAllTrackUsecaseProvider,
+                                                        )
+                                                        .call(NoParams());
+
                                                     if (context.mounted) {
                                                       context.pop();
 
@@ -296,7 +316,9 @@ class _ManageSourceScreenState extends ConsumerState<ManageSourceScreen> {
                                                   ),
                                                   suffix: Icon(FIcons.trash),
                                                   onPress: () async {
-                                                    // delete channel first
+                                                    final wasActive = e.isActive;
+
+                                                    // delete source row first
                                                     await (driftDb.delete(
                                                           driftDb.sourceDrift,
                                                         )..where(
@@ -305,7 +327,7 @@ class _ManageSourceScreenState extends ConsumerState<ManageSourceScreen> {
                                                         ))
                                                         .go();
 
-                                                    // delete channel first
+                                                    // then its tracks
                                                     await (driftDb.delete(
                                                           driftDb.trackDrift,
                                                         )..where(
@@ -313,6 +335,54 @@ class _ManageSourceScreenState extends ConsumerState<ManageSourceScreen> {
                                                               .equals(e.id),
                                                         ))
                                                         .go();
+
+                                                    // if we removed the active
+                                                    // playlist, promote another so
+                                                    // the home isn't left empty
+                                                    if (wasActive) {
+                                                      final remaining =
+                                                          await driftDb
+                                                              .select(
+                                                                driftDb
+                                                                    .sourceDrift,
+                                                              )
+                                                              .get();
+                                                      if (remaining.isNotEmpty) {
+                                                        await (driftDb.update(
+                                                                  driftDb
+                                                                      .sourceDrift,
+                                                                )..where(
+                                                                  (t) => t.id
+                                                                      .equals(
+                                                                        remaining
+                                                                            .first
+                                                                            .id,
+                                                                      ),
+                                                                ))
+                                                            .write(
+                                                              SourceDriftCompanion(
+                                                                isActive:
+                                                                    drift.Value(
+                                                                  true,
+                                                                ),
+                                                              ),
+                                                            );
+                                                      }
+                                                    }
+
+                                                    // invalidate cached active
+                                                    // source + reload home lists
+                                                    await ref
+                                                        .read(
+                                                          activeSourceProvider
+                                                              .notifier,
+                                                        )
+                                                        .perform();
+                                                    ref
+                                                        .read(
+                                                          refreshAllTrackUsecaseProvider,
+                                                        )
+                                                        .call(NoParams());
 
                                                     loadPlaylist();
 

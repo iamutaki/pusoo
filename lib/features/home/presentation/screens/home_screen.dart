@@ -16,30 +16,42 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
+import 'package:flutter_svg/svg.dart';
+import 'package:gap/gap.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:pusoo/features/explore/presentation/screens/explore_screen.dart';
 import 'package:pusoo/features/movie/presentation/screens/movie_screen.dart';
+import 'package:pusoo/features/playlist/domain/usecases/inject_default_playlist_usecase.dart';
 import 'package:pusoo/features/serie/presentation/screens/serie_screen.dart';
 import 'package:pusoo/features/setting/presentation/screens/setting_screen.dart';
 import 'package:pusoo/features/tv/presentation/screens/tv_screen.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   int selectedIndex = 0;
 
   @override
   Widget build(BuildContext context) {
+    final isInjecting =
+        ref.watch(injectDefaultPlaylistStatusProvider) ==
+            InjectDefaultPlaylistStatus.injecting;
+    if (isInjecting) {
+      // first-run: cover the whole UI while the default playlist is seeded
+      return const _DefaultPlaylistLoadingGate();
+    }
+
     final orientation = MediaQuery.of(context).orientation;
     final isPotrait = orientation == Orientation.portrait;
 
-    return FScaffold(
+    final scaffold = FScaffold(
       resizeToAvoidBottomInset: false,
       sidebar: isPotrait
           ? SizedBox.shrink()
@@ -206,6 +218,50 @@ class _HomeScreenState extends State<HomeScreen> {
           SerieScreen(),
           SettingScreen(),
         ],
+      ),
+    );
+
+    return scaffold;
+  }
+}
+
+/// Full-screen, opaque first-run gate shown while the default playlist is being
+/// seeded. Replaces the whole HomeScreen so nothing behind it is visible or
+/// interactable — a clean splash-like cover, not a peek-through overlay.
+class _DefaultPlaylistLoadingGate extends StatelessWidget {
+  const _DefaultPlaylistLoadingGate();
+
+  @override
+  Widget build(BuildContext context) {
+    return FScaffold(
+      resizeToAvoidBottomInset: false,
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 72,
+                  height: 72,
+                  child: SvgPicture.asset(
+                    'assets/icon.svg',
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                const Gap(24),
+                FProgress.circularIcon(),
+                const Gap(16),
+                Text(
+                  'Menyiapkan playlist default...',
+                  textAlign: TextAlign.center,
+                  style: context.theme.typography.base,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

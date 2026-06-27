@@ -16,7 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import 'package:flutter/material.dart';
 import 'package:infinite_scroll_pagination/infinite_scroll_pagination.dart';
 import 'package:pusoo/features/serie/presentation/providers/serie_tracks_filter_notifier.dart';
 import 'package:pusoo/features/track/presentation/providers/track_notifier.dart';
@@ -27,42 +26,20 @@ part 'serie_tracks_paging_notifier.g.dart';
 
 @riverpod
 class SerieTracksPagingNotifier extends _$SerieTracksPagingNotifier {
+  static const pageSize = 20;
+
   @override
   PagingController<int, Track> build() {
     final controller = PagingController<int, Track>(
       getNextPageKey: (state) {
-        debugPrint(
-          '[PagingSerieTracksController] getNextPageKey called. Current state: ${state.toString()}',
-        );
+        if (state.pages == null || state.pages!.isEmpty) return 0;
+        if (!state.hasNextPage) return null;
 
-        if (state.pages == null || state.pages!.isEmpty) {
-          debugPrint(
-            '[PagingSerieTracksController] getNextPageKey: No pages yet, returning 0 (first page key).',
-          );
-          return 0;
-        }
+        final lastPage = state.pages!.last;
+        // a page smaller than pageSize means we've reached the end
+        if (lastPage.length < pageSize) return null;
 
-        if (!state.hasNextPage) {
-          debugPrint(
-            '[PagingSerieTracksController] getNextPageKey: hasNextPage is false, returning null.',
-          );
-          return null;
-        }
-
-        final lastFetchedPage = state.pages!.last;
-
-        if (lastFetchedPage.length < 20) {
-          debugPrint(
-            '[PagingSerieTracksController] getNextPageKey: Last page had ${lastFetchedPage.length} items (<20), returning null.',
-          );
-          return null;
-        }
-
-        final nextPageKey = lastFetchedPage.last.id;
-        debugPrint(
-          '[PagingSerieTracksController] getNextPageController] getNextPageKey: Returning next page key: $nextPageKey',
-        );
-        return nextPageKey;
+        return lastPage.last.id;
       },
       fetchPage: (pageKey) async {
         final filterState = ref.read(serieTracksFilterProvider);
@@ -70,7 +47,7 @@ class SerieTracksPagingNotifier extends _$SerieTracksPagingNotifier {
         try {
           await ref
               .read(tracksProvider.notifier)
-              .perform(filterState.copyWith(cursor: pageKey));
+              .perform(filterState.copyWith(cursor: pageKey, limit: pageSize));
 
           return ref.read(tracksProvider).value ?? [];
         } catch (e) {

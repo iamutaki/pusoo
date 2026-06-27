@@ -24,6 +24,7 @@ import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:pusoo/features/playlist/domain/usecases/inject_default_playlist_usecase.dart';
 import 'package:pusoo/features/track/domain/usecases/auto_refresh_active_source_usecase.dart';
 import 'package:pusoo/router.dart';
 import 'package:pusoo/shared/utils/usecase.dart';
@@ -52,6 +53,11 @@ void main() {
   // ]);
 
   final container = ProviderContainer();
+
+  // First-run: seed the default playlist (shows a loading overlay on HomeScreen
+  // while it fetches; skipped if already seeded). Fire-and-forget so the UI
+  // renders immediately.
+  unawaited(container.read(injectDefaultPlaylistUsecaseProvider).call());
 
   // Daily auto-refresh of the active playlist (throttled to once/24h, silent on
   // failure — the UI keeps showing existing DB tracks while this runs).

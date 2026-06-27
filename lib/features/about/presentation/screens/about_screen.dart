@@ -24,6 +24,7 @@ import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pusoo/shared/consts/third_party_license.dart';
 import 'package:pusoo/router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
@@ -113,6 +114,31 @@ class _AboutScreenState extends State<AboutScreen> {
                 ),
               ],
             ),
+          ),
+          Gap(20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              "Developer",
+              style: context.theme.typography.sm.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Gap(4),
+          FTile(
+            title: Text("Ibnul Mutaki"),
+            subtitle: Text("@iamutaki"),
+            suffix: Icon(FIcons.externalLink),
+            onPress: () async {
+              final uri = Uri.parse("https://github.com/iamutaki");
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(
+                  uri,
+                  mode: LaunchMode.externalApplication,
+                );
+              }
+            },
           ),
           Gap(20),
           FTabs(

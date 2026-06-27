@@ -16,20 +16,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import 'dart:convert';
-
 import 'package:dartz/dartz.dart';
 import 'package:drift/drift.dart' as drift;
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:http/http.dart' as http;
 import 'package:pusoo/features/track/domain/models/track.dart';
 import 'package:pusoo/features/track/domain/usecases/refresh_all_track_usecase.dart';
 import 'package:pusoo/features/track/presentation/providers/track_providers.dart';
 import 'package:pusoo/shared/data/datasources/local/drift/drift_database.dart';
-import 'package:pusoo/shared/data/playlist_template_reff.dart';
 import 'package:pusoo/shared/errors/failure.dart';
-import 'package:pusoo/shared/utils/m3u_parser.dart';
+import 'package:pusoo/shared/utils/m3u.dart';
 import 'package:pusoo/shared/utils/usecase.dart';
 
 /// Re-fetches the active source's M3U from its remote URL, replaces its tracks
@@ -67,66 +63,16 @@ class AutoRefreshActiveSourceUsecase implements UseCase<void, NoParams> {
     }
 
     final sourceId = source.id;
-    final List<Track> tracks;
-    try {
-      final resp = await http
-          .get(Uri.parse(url), headers: _headers)
-          .timeout(const Duration(minutes: 2));
-      if (resp.statusCode != 200) {
-        debugPrint(
-          'auto-refresh: http ${resp.statusCode}, keeping existing tracks',
-        );
-        return Right(null);
-      }
-      final content =
-          utf8.decode(resp.bodyBytes).replaceFirst('\u{FEFF}', '');
-      tracks = M3UParser.parse(content);
-    } catch (e) {
-      debugPrint('auto-refresh: fetch failed, keeping existing tracks: $e');
-      return Right(null);
-    }
-
-    if (tracks.isEmpty) return Right(null);
+    final tracks = await _fetchTracks(url);
+    if (tracks == null || tracks.isEmpty) return Right(null);
 
     await driftDb.transaction(() async {
       await (driftDb.delete(driftDb.trackDrift)
             ..where((t) => t.sourceId.equals(sourceId)))
           .go();
-      await driftDb.batch((b) {
-        b.insertAll(
-          driftDb.trackDrift,
-          tracks.map<TrackDriftCompanion>((track) {
-            return TrackDriftCompanion(
-              sourceId: drift.Value(sourceId),
-              title: drift.Value(track.title),
-              tvgId: drift.Value(track.tvgId),
-              tvgLogo: drift.Value(track.tvgLogo),
-              groupTitle: drift.Value(track.groupTitle),
-              links: drift.Value(jsonEncode(track.links)),
-              kodiProps: drift.Value(jsonEncode(track.kodiProps)),
-              extVlcOpts: drift.Value(jsonEncode(track.extVlcOpts)),
-              isLiveTv: drift.Value(
-                xtreamPlaylistTemplate.liveTvClassifier?.isSatisfiedByAll(
-                      track,
-                    ) ??
-                    false,
-              ),
-              isMovie: drift.Value(
-                xtreamPlaylistTemplate.movieClassifier?.isSatisfiedByAll(
-                      track,
-                    ) ??
-                    false,
-              ),
-              isTvSerie: drift.Value(
-                xtreamPlaylistTemplate.tvSerieClassifier?.isSatisfiedByAll(
-                      track,
-                    ) ??
-                    false,
-              ),
-            );
-          }).toList(),
-        );
-      });
+      await driftDb.batch(
+        (b) => b.insertAll(driftDb.trackDrift, trackCompanions(sourceId, tracks)),
+      );
       await (driftDb.update(driftDb.sourceDrift)
             ..where((t) => t.id.equals(sourceId)))
           .write(SourceDriftCompanion(lastUpdated: drift.Value(now)));
@@ -140,15 +86,15 @@ class AutoRefreshActiveSourceUsecase implements UseCase<void, NoParams> {
     return Right(null);
   }
 
-  // ponytail: mirrors AddNewPlaylistScreen's headers; extract to a util if a
-  // third caller appears.
-  static const _headers = {
-    'User-Agent':
-        'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36',
-    'Accept': 'text/plain,text/*,*/*',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  };
+  /// Fetches + parses the remote M3U, returning null (silent) on any failure.
+  Future<List<Track>?> _fetchTracks(String url) async {
+    try {
+      return await fetchAndParseM3u(url);
+    } catch (e) {
+      debugPrint('auto-refresh: fetch failed, keeping existing tracks: $e');
+      return null;
+    }
+  }
 }
 
 // ponytail: plain Provider (no build_runner) for a one-off bootstrap usecase.
